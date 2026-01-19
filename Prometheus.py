@@ -632,6 +632,7 @@ class Client(commands.Bot):
         self.update_voice_channel.start()
         self.update_vc_xp.start()
         self.update_top_xp_role.start()
+        self.unmute_task.start()
 
 
     async def on_message(self, message):
@@ -689,20 +690,36 @@ class Client(commands.Bot):
         now = int(datetime.datetime.now(ZoneInfo("Europe/Paris")).timestamp()) 
         cursormod.execute("SELECT user_id FROM mutes WHERE end_time <= ?", (now,))
         to_unmute = cursormod.fetchall()
-        guild_obj = self.get_guild(guild.id)
-        muted_role = guild_obj.get_role(muted_role_id)
+
+        guild = self.get_guild(server_id)
+        
+        if not guild:
+            print("❌ Server not found")
+            return
+        
+        muted_role = guild.get_role(muted_role_id)
+        
+        if not muted_role:
+            print("❌ Muted role not found")
+            return
+        
         for (user_id,) in to_unmute:
-            member = guild_obj.get_member(user_id)
-            if member and muted_role and muted_role in member.roles:
+            member = guild.get_member(user_id)
+            if member and muted_role in member.roles:
                 try:
                     await member.remove_roles(muted_role, reason="Mute automatically expired")
+                    print(f"   ✅ {member.name} unmuted successfully")
                     try:
-                        await member.send(f"🔊 Your mute on {guild_obj.name} is finished.")
+                        await member.send(f"🔊 Your mute on {guild.name} has ended.")
                     except:
                         pass
-                except:
-                    pass
+                except Exception as e:
+                    print(f"   ❌ Error unmuting {member.name}: {e}")
+            else:
+                print(f"   ⏭️  User {user_id} no longer has the role or is no longer on the server")
+            
             cursormod.execute("DELETE FROM mutes WHERE user_id = ?", (user_id,))
+        
         connmod.commit()
 
     @tasks.loop(minutes=5)
